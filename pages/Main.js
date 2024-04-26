@@ -3,6 +3,17 @@ import { Header, NFTDisplay, Hero } from '../components'
 import { useEffect, useState } from "react";
 import { Toaster } from 'react-hot-toast';
 import toast from "react-hot-toast"
+import {
+  guestIdentity,
+  Metaplex,
+  walletAdapterIdentity
+} from "@metaplex-foundation/js"
+
+import { LAMPORTS_PER_SOL } from "@solana/web3.js";
+
+import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
+
+import { CANDY_MACHINE_ID } from "../utils"; 
 
 const styles = {
   wrapper: 'flex h-[100vh] w-[100vw] bg-[#1d1d1d] text-gray-200',
@@ -18,7 +29,65 @@ const styles = {
 
 
 export default function Main() {
+  const [metaplex, setMetaplex] = useState()
 
+  const [candyState, setCandyState] = useState()
+  const [candyStateError, setCandyStateError] = useState()
+  const [candyStateLoading, setCandyStateLoading] = useState()
+  const [txError, setTxError] = useState()
+  const [txLoading, setTxLoading] = useState(false)
+  const [nfts, setNfts] = useState([])
+
+  const { connection } = useConnection()
+  const wallet = useAnchorWallet()
+
+  useEffect(() => {
+    setMetaplex(
+      Metaplex.make(connection).use(
+        wallet ? walletAdapterIdentity(wallet) : guestIdentity()
+      )
+    )
+  }, [connection, wallet])
+
+  // console.log('metaplex', metaplex)
+
+  // Set up my state from my candy machine AND update it every
+  useEffect(() => {
+    if (!metaplex) return
+
+    const updateState = async () => {
+      try {
+        const state = await metaplex
+          .candyMachines()
+          .findByAddress({ address: CANDY_MACHINE_ID })
+        console.log('state', state)
+        setCandyState(state)
+        setNfts(state.items)
+        setCandyStateError(null)
+      } catch (e) {
+        console.log(e)
+        toast.error("Error has occured!")
+      } finally {
+        setCandyStateLoading(false)
+        toast.success("Updated state!")
+      }
+    }
+
+    updateState()
+
+    // Refresh state every 30 seconds
+    const intervalId = setInterval(() => updateState(), 30_000)
+
+    return () => clearInterval(intervalId)
+  }, [metaplex])
+
+  const soldOut = candyState?.itemsRemaining.eqn(0)
+  const solAmount = candyState?.candyGuard?.guards?.solPayment
+  ? candyState.candyGuard.guards.solPayment.lamports.toNumber() / LAMPORTS_PER_SOL : null
+
+
+
+  // console.log("candyState", candyState.items)
   return (
     <div className={styles.wrapper}>
       <Toaster
@@ -39,6 +108,22 @@ export default function Main() {
           <Hero />
           <div>
             {/* Candymachine states will go here! */}
+            { candyStateLoading ? (
+              <div>Loading</div>
+            ) : candyStateError ? (
+              <div>{candyStateError}</div>
+            ) : (
+              candyState && (
+                <div>
+                  <div>Total items: {candyState.itemsAvailable.toString()}</div>
+                  <div>Minted items: {candyState.itemsMinted.toString()}</div>
+                  <div>Remaining items: {candyState.itemsRemaining.toString()}</div>
+                  {solAmount && <>Cost: {solAmount}</>}
+                  {txError && <div>{txError}</div>}
+                </div>
+              )
+            )
+            }
           </div>
         </section>
 
